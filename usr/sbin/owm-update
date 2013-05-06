@@ -9,10 +9,11 @@ fail() {
 
 update_map() {
 	local host=$(cat /proc/sys/kernel/hostname) 
+	if [ $(uci -q get owm.settings.public) == "true" -a $host != "ffnode" ]; then
 	rev=$(curl -4 -sIX HEAD $map_server/openwifimap/$nodeid 2>/dev/null | grep ETag | cut -d '"' -f2)
 	
 	mkdir -p /tmp/map
-	if [ $(uci -q get owm.settings.public) == "true" ]; then
+	
 	echo "Update node $host.$zonename on server $map_server"
 	echo '{"type": "node", "hostname": "'$host.$zonename'", "longitude": '$lon', "latitude": '$lat', "lastupdate": "'$(date -u "+%Y-%m-%dT%H:%M:%SZ")'", "updateInterval": '$interval'}' > /tmp/map/"$host".json
 		if [ -z $rev ] ; then
@@ -21,7 +22,7 @@ update_map() {
 			curl -4 -sX PUT -H "Content-Type: application/json" "$map_server/openwifimap/$nodeid?rev=$rev" -T /tmp/map/"$host".json
 		fi
 	else
-		echo "Node is private, not updating..."
+		echo "Node is private or hostname is not set, not updating..."
 	fi
 }
 
