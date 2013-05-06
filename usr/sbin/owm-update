@@ -1,0 +1,53 @@
+#!/bin/sh
+# OpenWifiMap updater script
+# By CyrusFox, basic hacked version ;)
+
+fail() {
+    echo "$1" 1>&2
+    exit 1
+}
+
+update_map() {
+	local host=$(cat /proc/sys/kernel/hostname) 
+	rev=$(curl -4 -sIX HEAD $map_server/openwifimap/$nodeid 2>/dev/null | grep ETag | cut -d '"' -f2)
+	
+	mkdir -p /tmp/map
+	
+	echo "Update node $host.$zonename server $map_server"
+	echo '{"type": "node", "hostname": "'$host.$zonename'", "longitude": '$lon', "latitude": '$lat', "lastupdate": "'$(date -u "+%Y-%m-%dT%H:%M:%SZ")'", "updateInterval": '$interval'}' > /tmp/map/"$host".json
+		if [ -z $rev ] ; then
+			curl -4 -sX PUT -H "Content-Type: application/json" "$map_server/openwifimap/$nodeid" -T /tmp/map/"$host".json
+		else
+			curl -4 -sX PUT -H "Content-Type: application/json" "$map_server/openwifimap/$nodeid?rev=$rev" -T /tmp/map/"$host".json
+		fi
+	
+}
+
+printArgs () {
+    fail "Usage:
+$0 update_map
+"
+}
+[ $# -lt 1 ] && printArgs
+
+interval=$(uci -q get owm.settings.interval)
+zonename=$(uci -q get owm.settings.zonename)
+lat=$(uci -q get owm.settings.lat)
+lon=$(uci -q get owm.settings.lon)
+map_server=$(uci -q get owm.settings.map_server)
+nodeid=$(cat /etc/nodeid)
+
+[ -z $interval ] && fail "Interval not set in OWM config"
+[ -z $zonename ] && fail "Zonename not set in OWM config"
+[ -z $lat -o -z $lon ] && fail "Latitude or Longitude not set in OWM config"
+[ -z $map_server ] && fail "Map server not set in OWM config"
+[ -z $nodeid ] && fail "NodeID not set yet, please wait for NodeID script to run.."
+
+case "$1" in
+  --help|-h)
+    printArgs
+    ;;
+  *)
+    update_map
+    ;;
+esac

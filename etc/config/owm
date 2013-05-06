@@ -1,0 +1,6 @@
+config owm 'settings'
+        option 'map_server' 'http://map.freifunk-rheinland.net'
+        option 'interval' '600'
+        option 'lat' ''
+        option 'lon' ''
+        option 'zonename' 'ffne'
