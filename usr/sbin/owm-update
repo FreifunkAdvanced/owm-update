@@ -7,24 +7,57 @@ fail() {
     exit 1
 }
 
+get_rev() {
+	echo -e "HEAD /openwifimap/$nodeid HTTP/1.1\r
+User-Agent: ffmapupdate\r
+Host: $map_server\r
+Connection: close\r
+\r
+" | netcat -w 1 $map_server 80 > /tmp/owm_revision
+	echo $(cat /tmp/owm_revision) | grep ETag | cut -d '"' -f2
+}
+
+send_update() {
+	local rev=$(get_rev)
+	if [ -z $rev ]; then 
+		echo -e "PUT /openwifimap/$nodeid HTTP/1.1\r
+User-Agent: ffmapupdate\r
+Host: $map_server\r
+Connection: close\r
+Accept: */*\r
+Content-Type: application/json\r
+Content-Length: $(wc -c /tmp/map/$host.json | cut -d ' ' -f1 )\r
+\r
+$(cat /tmp/map/$host.json)\r
+\r
+" | netcat -v -w 1 $map_server 80 > /tmp/owm_update
+	else
+		echo -e "PUT /openwifimap/$nodeid?rev=$rev HTTP/1.1\r
+User-Agent: ffmapupdate\r
+Host: $map_server\r
+Connection: close\r
+Accept: */*\r
+Content-Type: application/json\r
+Content-Length: $(wc -c /tmp/map/$host.json | cut -d ' ' -f1 )\r
+\r
+$(cat /tmp/map/$host.json)\r
+\r
+" | netcat -v -w 1 $map_server 80 > /tmp/owm_update
+	fi
+}
 update_map() {
 	local host=$(cat /proc/sys/kernel/hostname) 
 	if [ $(uci -q get owm.settings.public) == "true" -a $host != "ffnode" ]; then
-	rev=$(curl -4 -sIX HEAD $map_server/openwifimap/$nodeid 2>/dev/null | grep ETag | cut -d '"' -f2)
-	
 	mkdir -p /tmp/map
-	
 	echo "Update node $host.$zonename on server $map_server"
 	echo '{"type": "node", "hostname": "'$host.$zonename'", "longitude": '$lon', "latitude": '$lat', "lastupdate": "'$(date -u "+%Y-%m-%dT%H:%M:%SZ")'", "updateInterval": '$interval'}' > /tmp/map/"$host".json
-		if [ -z $rev ] ; then
-			curl -4 -sX PUT -H "Content-Type: application/json" "$map_server/openwifimap/$nodeid" -T /tmp/map/"$host".json
-		else
-			curl -4 -sX PUT -H "Content-Type: application/json" "$map_server/openwifimap/$nodeid?rev=$rev" -T /tmp/map/"$host".json
-		fi
+	send_update
 	else
 		echo "Node is private or hostname is not set, not updating..."
 	fi
 }
+
+
 
 printArgs () {
     fail "Usage:
