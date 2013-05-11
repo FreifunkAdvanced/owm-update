@@ -93,7 +93,7 @@ generate_json_postalAddress() {
 		-o -n "$postal_zip" \
 		-o -n "$postal_city" \
 		-o -n "$postal_country" ]; then
-		postalAddress=$(
+		local jsondata=$(
 			. /usr/share/libubox/jshn.sh
 			json_init 
 			[ -n "$postal_name" ] && json_add_string "name" "$postal_name"
@@ -103,7 +103,7 @@ generate_json_postalAddress() {
 			[ -n "$postal_country" ] && json_add_string "country" "$postal_country"
 			echo $(json_dump)
 		)
-		echo "$postalAddress"
+		echo $jsondata
 	fi
 }
 
@@ -170,16 +170,16 @@ generate_json_ipv4defaultGateway() {
 	
 	if [ -n "$defroute" ]; then
 	
-	local jsondata=$(
-			. /usr/share/libubox/jshn.sh
-			json_init 
-			json_add_string gateway "$defroute_gw"
-			json_add_string dev "$defroute_iface"
-			json_add_string metr "$defroute_metric"
-			echo $(json_dump)
-			)
-			
-	echo $jsondata
+		local jsondata=$(
+		. /usr/share/libubox/jshn.sh
+		json_init 
+		json_add_string gateway "$defroute_gw"
+		json_add_string dev "$defroute_iface"
+		json_add_string metr "$defroute_metric"
+		echo $(json_dump)
+		)
+		
+		echo $jsondata
 	fi
 }
 
@@ -190,17 +190,33 @@ generate_json_ipv6defaultGateway() {
 	local defroute_iface=$(echo $defroute | awk '{print $7}')
 	
 	if [ -n "$defroute" ]; then
+		local jsondata=$(
+		. /usr/share/libubox/jshn.sh
+		json_init 
+		json_add_string gateway "$defroute_gw"
+		json_add_string dev "$defroute_iface"
+		json_add_string metr "$defroute_metric"
+		echo $(json_dump)
+		)
+		echo $jsondata
+	fi
+}
+
+generate_json_firmware() {
+	local firmware_file="/etc/firmware"
+	local firmware_version=$(cat $firmware_file | cut -d "/" -f1)
+	local firmware_name=$(cat $firmware_file | cut -d "/" -f2)
+	local firmware_type=$(cat $firmware_file | cut -d "/" -f3)
 	
-	local jsondata=$(
-			. /usr/share/libubox/jshn.sh
-			json_init 
-			json_add_string gateway "$defroute_gw"
-			json_add_string dev "$defroute_iface"
-			json_add_string metr "$defroute_metric"
-			echo $(json_dump)
-			)
-			
-	echo $jsondata
+	if [ -n "$firmware_version" -a -n "$firmware_name" -a -n "$firmware_type" ]; then
+		local jsondata=$(
+		. /usr/share/libubox/jshn.sh
+		json_init 
+		json_add_string name "FF-Advanced $firmware_name $firmware_type"
+		json_add_string revision "$firmware_version"
+		echo $(json_dump)
+		)
+		echo $jsondata
 	fi
 }
 
@@ -208,28 +224,33 @@ generate_json () {
 	#Add basic (necessary) stuff
 	echo '{"type": "node", "hostname": "'$host.$zonename'", "longitude": '$lon', "latitude": '$lat', "updateInterval": '$interval',' > /tmp/map/"$host".json
 	#Add postal (Dude) stuff :D
-	postalData=$(generate_json_postalAddress)
-	[ -n "$postalData" ] && echo '"postalAddress": '$postalData',' >> /tmp/map/"$host".json
+	postalAddress=$(generate_json_postalAddress)
+	[ -n "$postalAddress" ] && echo '"postalAddress": '$postalAddress',' >> /tmp/map/"$host".json
 	#Add interfaces
-	interfacesData=$(generate_json_interfaces)
-	[ -n "$interfacesData" ] && echo '"interfaces": ['$interfacesData'],' >> /tmp/map/"$host".json
+	interfaces=$(generate_json_interfaces)
+	[ -n "$interfaces" ] && echo '"interfaces": ['$interfaces'],' >> /tmp/map/"$host".json
 	#Add default routes
-	ip4defroute=$(generate_json_ipv4defaultGateway)
-	[ -n "$ip4defroute" ] && echo '"ipv4defaultGateway": '$ip4defroute','  >> /tmp/map/"$host".json
-	ip6defroute=$(generate_json_ipv6defaultGateway)
-	[ -n "$ip6defroute" ] && echo '"ipv6defaultGateway": '$ip6defroute','  >> /tmp/map/"$host".json
+	ipv4defaultGateway=$(generate_json_ipv4defaultGateway)
+	[ -n "$ipv4defaultGateway" ] && echo '"ipv4defaultGateway": '$ipv4defaultGateway','  >> /tmp/map/"$host".json
+	ipv6defaultGateway=$(generate_json_ipv6defaultGateway)
+	[ -n "$ipv6defaultGateway" ] && echo '"ipv6defaultGateway": '$ipv6defaultGateway','  >> /tmp/map/"$host".json
+	#Add firmware info
+	firmware=$(generate_json_firmware)
+	[ -n "$firmware" ] && echo '"firmware": '$firmware','  >> /tmp/map/"$host".json
 	
+	#Close json
 	echo '"lastupdate": "'$(date -u "+%Y-%m-%dT%H:%M:%SZ")'"}'  >> /tmp/map/"$host".json
 }
 
 update() {
 	if [ $(uci -q get owm.settings.public) == "true" -a $host != "ffnode" ]; then
 		logger -t owm-update "Update node $host.$zonename on server $map_server"
+		echo "Update node $host.$zonename on server $map_server"
 		generate_json
-		#echo $(cat /tmp/map/"$host".json)
 		send_update
 	else
 		logger -t owm-update "Node is private or hostname is not set, not updating..."
+		echo "Node is private or hostname is not set, not updating..."
 	fi
 }
 
