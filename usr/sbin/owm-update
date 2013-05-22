@@ -1,6 +1,6 @@
 #!/bin/sh
 # OpenWifiMap updater script
-# By CyrusFox, basic hacked version ;)
+# By CyrusFox
 # Utilizes libubox's jshn.sh 
 # Sadly the current (AA 12.09) package version doesnt support double types
 # therefore it will be limited to basic data + postalAddress + interfaces
@@ -109,57 +109,59 @@ generate_json_postalAddress() {
 
 generate_json_interfaces() {
 	# Wired / Batman / Mesh Interfaces section
-	#interfaces=$(uci -q get owm.settings.interfaces)
-	local interfaces="lan wan mesh"
+	local interfaces=$(uci -q get owm.settings.interfaces)
+	local active=$(uci -q get owm.settings.gen_interfaces)
 	
+	[ -z "$interfaces" ] && local interfaces="mesh adhoc"
 	
-	for interface in $interfaces 
-	do
-		if [ "$(ubus call network.interface.$interface status | grep '"up"': | cut -d ' ' -f2 | cut -d ',' -f1)" == "true" ]; then
-			#Get stuff
-			local l3_device=$(get_iface $interface)
-			local macaddr=$(ubus call network.device status '{ "name": "'$l3_device'" }' | grep "macaddr" | cut -d '"' -f4)
-			local name=$interface
-			local ip4addr=$(ifconfig $l3_device | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
-			local ip4mask=$(mask2cidr $(ifconfig $l3_device | grep Mask | sed s/^.*Mask://))
-			local ip6addrs=$(ifconfig $l3_device | awk '/inet6 addr/ {print $3}')
-			local jsondata=$(
-			. /usr/share/libubox/jshn.sh
-			json_init 
-			json_add_string "name" "$name"
-			json_add_string "physicalType" "ethernet"
-			json_add_string "macAddress" "$macaddr"
-			if [ -n "$ip4addr" -a -n "$ip4mask" ]; then
-				json_add_array ipv4Addresses
-				json_add_string 0 "$ip4addr/$ip4mask"
-				json_close_array
+	if [ "$active" == "true" ]; then
+		for interface in $interfaces 
+		do
+			if [ "$(ubus call network.interface.$interface status | grep '"up"': | cut -d ' ' -f2 | cut -d ',' -f1)" == "true" ]; then
+				#Get stuff
+				local l3_device=$(get_iface $interface)
+				local macaddr=$(ubus call network.device status '{ "name": "'$l3_device'" }' | grep "macaddr" | cut -d '"' -f4)
+				local name=$interface
+				local ip4addr=$(ifconfig $l3_device | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
+				local ip4mask=$(mask2cidr $(ifconfig $l3_device | grep Mask | sed s/^.*Mask://))
+				local ip6addrs=$(ifconfig $l3_device | awk '/inet6 addr/ {print $3}')
+				local jsondata=$(
+				. /usr/share/libubox/jshn.sh
+				json_init 
+				json_add_string "name" "$name"
+				json_add_string "physicalType" "ethernet"
+				json_add_string "macAddress" "$macaddr"
+				if [ -n "$ip4addr" -a -n "$ip4mask" ]; then
+					json_add_array ipv4Addresses
+					json_add_string 0 "$ip4addr/$ip4mask"
+					json_close_array
+				fi
+				if [ -n "$ip6addrs" ]; then
+					json_add_array ipv6Addresses
+					for ip6addr in $ip6addrs
+					do
+						json_add_string 0 "$ip6addr"
+					done
+					json_close_array
+				fi
+				echo $(json_dump)
+				)
+				echo $jsondata >> /tmp/map/interfaces/"$interface"-iface.json
 			fi
-			if [ -n "$ip6addrs" ]; then
-				json_add_array ipv6Addresses
-				for ip6addr in $ip6addrs
-				do
-					json_add_string 0 "$ip6addr"
-				done
-				json_close_array
-			fi
-			echo $(json_dump)
-			)
-			echo $jsondata >> /tmp/map/interfaces/"$interface"-iface.json
-		fi
 		done
-	interface_count=$(ls -l /tmp/map/interfaces/ | grep iface.json | wc -l)
-	counter="1"
-	for jsonfile in $(find /tmp/map/interfaces/ | grep iface.json)
-	do
-		cat $jsonfile >> /tmp/map/interfaces/all.json
-		counter_new=`expr $counter + 1`
-		if [ "$counter_new" -le "$interface_count" ]; then
-			echo ',' >> /tmp/map/interfaces/all.json
-		fi
-		counter="$counter_new"
-	done
-	echo $(cat /tmp/map/interfaces/all.json)
-
+		interface_count=$(ls -l /tmp/map/interfaces/ | grep iface.json | wc -l)
+		counter="1"
+		for jsonfile in $(find /tmp/map/interfaces/ | grep iface.json)
+		do
+			cat $jsonfile >> /tmp/map/interfaces/all.json
+			counter_new=`expr $counter + 1`
+			if [ "$counter_new" -le "$interface_count" ]; then
+				echo ',' >> /tmp/map/interfaces/all.json
+			fi
+			counter="$counter_new"
+		done
+		echo $(cat /tmp/map/interfaces/all.json)
+	fi
 }
 
 generate_json_ipv4defaultGateway() {
@@ -167,8 +169,10 @@ generate_json_ipv4defaultGateway() {
 	local defroute_gw=$(echo $defroute | awk '{print $2}')
 	local defroute_metric=$(echo $defroute | awk '{print $5}')
 	local defroute_iface=$(echo $defroute | awk '{print $8}')
+	local active=$(uci -q get owm.settings.gen_interfaces)
+	local interfaces_active=$(uci -q get owm.settings.gen_interfaces)
 	
-	if [ -n "$defroute" ]; then
+	if [ -n "$defroute" -a "$active" == "true" -a "$interfaces_active" == "true" ]; then
 	
 		local jsondata=$(
 		. /usr/share/libubox/jshn.sh
@@ -188,8 +192,10 @@ generate_json_ipv6defaultGateway() {
 	local defroute_gw=$(echo $defroute | awk '{print $2}')
 	local defroute_metric=$(echo $defroute | awk '{print $4}')
 	local defroute_iface=$(echo $defroute | awk '{print $7}')
+	local active=$(uci -q get owm.settings.gen_routes)
+	local interfaces_active=$(uci -q get owm.settings.gen_interfaces)
 	
-	if [ -n "$defroute" ]; then
+	if [ -n "$defroute" -a "$active" == "true" -a "$interfaces_active" == "true" ]; then
 		local jsondata=$(
 		. /usr/share/libubox/jshn.sh
 		json_init 
@@ -207,8 +213,9 @@ generate_json_firmware() {
 	local firmware_version=$(cat $firmware_file | cut -d "/" -f1)
 	local firmware_name=$(cat $firmware_file | cut -d "/" -f2)
 	local firmware_type=$(cat $firmware_file | cut -d "/" -f3)
+	local active=$(uci -q get owm.settings.gen_firmware)
 	
-	if [ -n "$firmware_version" -a -n "$firmware_name" -a -n "$firmware_type" ]; then
+	if [ -n "$firmware_version" -a -n "$firmware_name" -a -n "$firmware_type" -a "$active" == "true" ]; then
 		local jsondata=$(
 		. /usr/share/libubox/jshn.sh
 		json_init 
@@ -243,7 +250,7 @@ generate_json () {
 }
 
 update() {
-	if [ $(uci -q get owm.settings.public) == "true" -a $host != "ffnode" ]; then
+	if [ $(uci -q get owm.settings.public) == "true" -a "$host" != "ffnode" ]; then
 		logger -t owm-update "Update node $host.$zonename on server $map_server"
 		echo "Update node $host.$zonename on server $map_server"
 		generate_json
@@ -269,7 +276,7 @@ lat=$(uci -q get owm.settings.lat)
 lon=$(uci -q get owm.settings.lon)
 map_server=$(uci -q get owm.settings.map_server)
 nodeid=$(cat /etc/nodeid)
-host=$(cat /proc/sys/kernel/hostname) 
+host=$(cat /proc/sys/kernel/hostname)
 
 [ -z $interval ] && fail "Interval not set in OWM config"
 [ -z $zonename ] && fail "Zonename not set in OWM config"
