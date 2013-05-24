@@ -169,7 +169,7 @@ generate_json_ipv4defaultGateway() {
 	local defroute_gw=$(echo $defroute | awk '{print $2}')
 	local defroute_metric=$(echo $defroute | awk '{print $5}')
 	local defroute_iface=$(echo $defroute | awk '{print $8}')
-	local active=$(uci -q get owm.settings.gen_interfaces)
+	local active=$(uci -q get owm.settings.gen_routes)
 	local interfaces_active=$(uci -q get owm.settings.gen_interfaces)
 	
 	if [ -n "$defroute" -a "$active" == "true" -a "$interfaces_active" == "true" ]; then
